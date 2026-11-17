@@ -4,29 +4,29 @@ Technical document. Ball possession for every frame of BAR-ATH.
 
 ## 1. Approach
 
-We label every frame with hand-written rules on top of the tracking data (ATD) and the Smart Tagging. No model is trained. For each frame the pipeline answers two questions: is the ball dead, and if not, which team has it.
+Possession in football changes at identifiable events, such as an intercepted pass, a missed shot or a foul. We therefore treat the task as event detection at the possession level, not frame-by-frame classification. (focusing on optimizing for spellf1 not macrof1). The pipeline detects these events and features in the automatic tracking data (ATD) and the Smart Tagging, resolves them into a sequence of possessions and stoppages, and only then expands that sequence into the per-frame label file.
 
-Why rules and not a trained model: the only possession labels for this match are the public five minutes, which may not be used for training or tuning, and we had no labelled possession data from other games. The ground truth is derived from corrected tracking, so most of the work is reading the automatic tracking well: finding touches, stoppages and restarts. These are physical events (the ball changes direction next to a player, the players stop running, the ball leaves the pitch) and can be written down directly, with thresholds in metres and seconds. Rules are also easy to check one by one, and every correction can be switched off to see what it does.
+The difficulty of this problem lies in having good football knowledge, and turning this understanding into engineered features with thresholds, which is more direct than asking a model to relearn it from noisy tracking, and in our testing those rules were sufficient and achieved strong results.
 
-The code has three parts. Each detector in `src/detectors/` reads the data and gives one answer per frame or a list of events, without looking at the other detectors. `src/resolve.py` is the only place where their answers are combined, in a fixed order. `src/fill.py` fills the frames that are still open. When sources disagree the order of trust is: dead ball from the tracking, then the kick-off taker, then possession from touches, then the Smart Tagging.
+Each rule is physically meaningful, can be inspected on its own, and can be switched off to measure its contribution.
 
-## 2. Assets
+The pipeline has two stages:
+- Detection (src/detectors/): Independent detectors read the tracking and tagging data and report events such as ball touches, dead-ball intervals and restarts. Each works in isolation and does not see the others' output.
+- Resolution (src/resolve.py): The place where detector outputs are combined and cross-detector rules are applied.
 
-Used:
+Then finally labels are carried forward to fill any remaining gaps.
 
-- Tactical ATD (txt and xml): ball and player positions per frame, and the team of each player slot. This is the main source for everything.
-- Tactical Smart Tagging (xml): set pieces (type, taker, rough restart time) and open-play phases (which team is building up, defending, and so on). Used where the tracking says nothing, and to know which kind of restart a stoppage ends with.
-- Pitch size 105.3 x 68 m, from the organisers' `games.py`.
 
-Not used:
+## 2. Assets Used
 
-- The tactical video. We watched it to understand the data and debug the pipeline, but nothing in the pipeline reads it.
-- The homography: the ATD is already in pitch coordinates, so we did not need it.
-- The broadcast video and its tracking: they are not on the same timeline as the tactical video.
+- Tactical ATD (txt and xml).
+- Tactical Smart Tagging (xml)
+- Pitch size 105.3 x 68 m, from the given `games.py`.
+
 
 ## 3. Training data
 
-None. We used no labelled dataset and trained no model. The thresholds are set from physical reasoning (player and ball speeds, contact distances, penalty box size from the Laws of the Game). The only outside data is the Metrica Sports open sample data, games 1 to 3 (https://github.com/metrica-sports/sample-data), used to check our thresholds on other matches. Nothing was fitted on it.
+We used no labelled dataset to train any model. The thresholds are set from physical reasoning (player and ball speeds, contact distances, penalty box size from the Laws of the Game), and some of them were tuned on the Metrica Sports open sample data, games 1 to 3. (https://github.com/metrica-sports/sample-data)
 
 The public five minutes of ground truth were used only to check the pipeline end to end (frame alignment, file format, labels meaning what we think).
 
@@ -84,8 +84,8 @@ The data:
 
 Our method:
 
-- A change needs two or three detected touches, so very short possessions are missed, and a change is only as early as the first touch we detect.
-- Stoppages the ball track does not show, like a foul, are found from the players slowing down, which comes a few seconds after the whistle.
+- A change needs two or three detected touches, so sometimes very short possessions are missed, and a change is only as early as the first touch we detect.
+- Stoppages the ball track does not show, like a foul, are found from the players slowing down, which in some cases comes a few seconds late.
 - The thresholds come from physical reasoning and were only checked against the Metrica sample games.
 
 
